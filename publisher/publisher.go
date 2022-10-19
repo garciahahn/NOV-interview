@@ -11,7 +11,8 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-var sleepTime = time.Second * 1
+// pre-defined sleeping time to send data
+const sleepTime = time.Second * 1
 
 func main() {
 	// Make signal channel to gracefully terminate program
@@ -29,19 +30,25 @@ func main() {
 	checkError(err)
 	defer ec.Close()
 
+	// Initialize the three sensors
 	sensors := initSensors()
+	// Main working loop
 	OuterLoop:
 	for{
 		select{
+		// To gracefully break out of the main loop
 		case <- c:
 			fmt.Println("Program finished!")
 			break OuterLoop
 		default:
+			// Update the sensor data (assign new random values)
 			for i := 0; i<len(sensors); i++{
 				sensors[i].UpdateSensor()
 			}
+			// Publish sensor data
 			err := ec.Publish(art.SensorChannel, sensors)
 			checkError(err)
+
 			fmt.Printf("Sent information about sensors, values were: ")
 			for i, v := range(sensors){
 				fmt.Printf("%d -> %.2f  ",
