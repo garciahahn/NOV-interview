@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
 	art "pkgs/artifact"
+	"syscall"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -11,6 +14,10 @@ import (
 var sleepTime = time.Second * 1
 
 func main() {
+	// Make signal channel to gracefully terminate program
+	c := make(chan os.Signal, 32)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
 	// Connect to server
 	nc, err := nats.Connect(nats.DefaultURL)
 	if err != nil {
@@ -23,20 +30,26 @@ func main() {
 	defer ec.Close()
 
 	sensors := initSensors()
-
+	OuterLoop:
 	for{
-		for i := 0; i<len(sensors); i++{
-			sensors[i].UpdateSensor()
+		select{
+		case <- c:
+			fmt.Println("Program finished!")
+			break OuterLoop
+		default:
+			for i := 0; i<len(sensors); i++{
+				sensors[i].UpdateSensor()
+			}
+			err := ec.Publish(art.SensorChannel, sensors)
+			checkError(err)
+			fmt.Printf("Sent information about sensors, values were: ")
+			for i, v := range(sensors){
+				fmt.Printf("%d -> %.2f  ",
+				i+1, v.Value)
+			}
+			fmt.Printf("\n")
+			time.Sleep(sleepTime)
 		}
-		err := ec.Publish(art.SensorChannel, sensors)
-		checkError(err)
-		fmt.Printf("Sent information about sensors, values were: ")
-		for i, v := range(sensors){
-			fmt.Printf("%d -> %.2f  ",
-			i+1, v.Value)
-		}
-		fmt.Printf("\n")
-		time.Sleep(sleepTime)
 	}
 
 }

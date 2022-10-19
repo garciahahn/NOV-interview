@@ -4,7 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"math/rand"
+	"os"
+	"os/signal"
 	art "pkgs/artifact"
+	"syscall"
 	"time"
 
 	"github.com/lib/pq"
@@ -38,7 +41,10 @@ func init() {
 }
 
 func main() {
-
+	// Make signal channel to gracefully terminate program
+	c := make(chan os.Signal, 32)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	
 	// Connecting to the NATS server
 	nc, err := nats.Connect(nats.DefaultURL)
 	checkError(err)
@@ -62,32 +68,40 @@ func main() {
 	checkError(err)
 
 	var id int = 0
+	OuterLoop:
 	for{
-		sensors := <- ch
-		sensorValues := make([]float64, len(*sensors))
-		tableIds := make([]int, len(*sensors))
-		for i, s := range *sensors{
-			err = db.QueryRow(sqlStatementRaw,
-							  s.Name,
-							  s.Timestamp,
-							  s.Value).Scan(&id)
+		select{
+		case <-c:
+			fmt.Println("Program finished!")
+			break OuterLoop
+		default:
+			sensors := <- ch
+			sensorValues := make([]float64, len(*sensors))
+			tableIds := make([]int, len(*sensors))
+			for i, s := range *sensors{
+				err = db.QueryRow(sqlStatementRaw,
+								s.Name,
+								s.Timestamp,
+								s.Value).Scan(&id)
+				checkError(err)
+				tableIds[i] = id
+				fmt.Printf("Added record %d from sensor %s\n", id, s.Name)
+				sensorValues[i] = s.Value
+				}	
+		
+
+			// Recording averaged values
+			sensorAverage := avg(sensorValues)
+			err = db.QueryRow(sqlStatementAvg,
+							pq.Array(tableIds),
+							time.Now().Unix(),
+							sensorAverage).Scan(&id)
+
 			checkError(err)
-			tableIds[i] = id
-			fmt.Printf("Added record %d from sensor %s\n", id, s.Name)
-			sensorValues[i] = s.Value
+			fmt.Printf("Added average record %d with value %.2f\n",
+						id,
+						sensorAverage)
 		}
-
-		// Recording averaged values
-		sensorAverage := avg(sensorValues)
-		err = db.QueryRow(sqlStatementAvg,
-						pq.Array(tableIds),
-						time.Now().Unix(),
-						sensorAverage).Scan(&id)
-
-		checkError(err)
-		fmt.Printf("Added average record %d with value %.2f\n",
-					id,
-					sensorAverage)
 	}
 }
 
