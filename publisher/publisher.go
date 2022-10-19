@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	art "pkgs/artifact"
 	"time"
 
@@ -18,9 +19,7 @@ func main() {
 
 	// Set up the json encoder for communication
 	ec, err := nats.NewEncodedConn(nc, nats.JSON_ENCODER)
-	if err != nil {
-		panic(err)
-	}
+	checkError(err)
 	defer ec.Close()
 
 	sensors := initSensors()
@@ -29,9 +28,14 @@ func main() {
 		for i := 0; i<len(sensors); i++{
 			sensors[i].UpdateSensor()
 		}
-		if err := ec.Publish(art.SensorChannel, sensors);err != nil{
-			panic(err)
+		err := ec.Publish(art.SensorChannel, sensors)
+		checkError(err)
+		fmt.Printf("Sent information about sensors, values were: ")
+		for i, v := range(sensors){
+			fmt.Printf("%d -> %.2f  ",
+			i+1, v.Value)
 		}
+		fmt.Printf("\n")
 		time.Sleep(sleepTime)
 	}
 
@@ -43,4 +47,10 @@ func initSensors() []*art.Sensor{
 	return []*art.Sensor{art.NewSensor("Sensor 1"),
 	art.NewSensor("Sensor 2"),
 	art.NewSensor("Sensor 3")}
+}
+
+func checkError(err error){
+	if err != nil{
+		panic(err)
+	}
 }
